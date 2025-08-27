@@ -30,7 +30,7 @@ target_compile_definitions("${CMAKE_PROJECT_NAME}" PUBLIC RESOURCES_PATH="${CMAK
 #target_compile_definitions("${CMAKE_PROJECT_NAME}" PUBLIC RESOURCES_PATH="./resources/") # Uncomment this line to setup the ASSETS_PATH macro to the final assets directory when you share the game
 
 
-target_sources("${CMAKE_PROJECT_NAME}" PRIVATE ${MY_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/hydrogen.cpp")
+target_sources("${CMAKE_PROJECT_NAME}" PRIVATE ${MY_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/src/hydrogen.cpp")
 
 
 if(MSVC) # If using the VS compiler...
