@@ -3,9 +3,8 @@
 #include <random>
 #include <cmath>
 #include <glm/gtc/type_ptr.hpp>
-#include <glad/glad.h> // Added for OpenGL functions
+#include <glad/glad.h> 
 
-// Constructor
 OrbitalGenerator::OrbitalGenerator(unsigned int orbitalVAO, unsigned int orbitalPosVBO, unsigned int orbitalColorVBO)
     : orbitalVAO_(orbitalVAO), orbitalPosVBO_(orbitalPosVBO), orbitalColorVBO_(orbitalColorVBO),
       numOrbitalPoints_(0) {}
