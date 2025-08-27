@@ -30,7 +30,7 @@ target_compile_definitions("${CMAKE_PROJECT_NAME}" PUBLIC RESOURCES_PATH="${CMAK
 #target_compile_definitions("${CMAKE_PROJECT_NAME}" PUBLIC RESOURCES_PATH="./resources/") # Uncomment this line to setup the ASSETS_PATH macro to the final assets directory when you share the game
 
 
-target_sources("${CMAKE_PROJECT_NAME}" PRIVATE ${MY_SOURCES} )
+target_sources("${CMAKE_PROJECT_NAME}" PRIVATE ${MY_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/hydrogen.cpp")
 
 
 if(MSVC) # If using the VS compiler...
@@ -45,7 +45,7 @@ if(MSVC) # If using the VS compiler...
 endif()
 
 
-target_include_directories("${CMAKE_PROJECT_NAME}" PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include/")
+target_include_directories("${CMAKE_PROJECT_NAME}" PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include/" "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui-docking/")
 
 
 target_link_libraries("${CMAKE_PROJECT_NAME}" PRIVATE glm glfw 
