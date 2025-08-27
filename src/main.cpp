@@ -18,11 +18,11 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
-#define USE_GPU_ENGINE 0
+// Hint to use dedicated GPU
 extern "C"
 {
-    __declspec(dllexport) unsigned long NvOptimusEnablement = USE_GPU_ENGINE;
-    __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = USE_GPU_ENGINE;
+    __declspec(dllexport) unsigned long NvOptimusEnablement = 1;
+    __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
 
 // Function prototypes
@@ -31,8 +31,8 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
-void generateOrbital(int n, int l, int m);
-
+void generateOrbital(int n, int l, int m, int s);
+void generateSphere(std::vector<float>& vertices, std::vector<unsigned int>& indices, float radius, int sectors, int stacks);
 
 // Camera
 Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
@@ -45,16 +45,14 @@ float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
 // Quantum numbers
-int n = 1, l = 0, m = 0;
+int n = 1, l = 0, m = 0, s = 1; // s: 1=Up, -1=Down, 0=Both
 bool orbitalNeedsUpdate = true;
 
 // Orbital data
-unsigned int orbitalVAO, orbitalVBO;
+unsigned int orbitalVAO, orbitalPosVBO, orbitalColorVBO;
 std::vector<glm::vec3> orbitalPoints;
+std::vector<glm::vec3> orbitalColors;
 int numOrbitalPoints = 0;
-
-// Sphere generation
-void generateSphere(std::vector<float>& vertices, std::vector<unsigned int>& indices, float radius, int sectors, int stacks);
 
 int main(void)
 {
@@ -80,9 +78,6 @@ int main(void)
     glfwSetScrollCallback(window, scroll_callback);
     glfwSetKeyCallback(window, key_callback);
 
-    // tell GLFW to capture our mouse
-    // glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-
     gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
     glfwSwapInterval(1);
 
@@ -96,14 +91,12 @@ int main(void)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_PROGRAM_POINT_SIZE);
 
-
     Shader lightingShader;
     lightingShader.loadShaderProgramFromFile(RESOURCES_PATH "vertex.vert", RESOURCES_PATH "fragment.frag");
 
     Shader nucleusShader;
     nucleusShader.loadShaderProgramFromFile(RESOURCES_PATH "vertex.vert", RESOURCES_PATH "nucleus.frag");
 
-    // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -111,40 +104,35 @@ int main(void)
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
-
-    // Sphere
     std::vector<float> vertices;
     std::vector<unsigned int> indices;
     generateSphere(vertices, indices, 0.1f, 36, 18);
 
-    unsigned int VBO, VAO, EBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    glGenBuffers(1, &EBO);
-
-    glBindVertexArray(VAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    unsigned int nucleusVBO, nucleusVAO, nucleusEBO;
+    glGenVertexArrays(1, &nucleusVAO);
+    glGenBuffers(1, &nucleusVBO);
+    glGenBuffers(1, &nucleusEBO);
+    glBindVertexArray(nucleusVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, nucleusVBO);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), &vertices[0], GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, nucleusEBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), &indices[0], GL_STATIC_DRAW);
-
-    // position attribute
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    // normal attribute
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-    // Orbital
     glGenVertexArrays(1, &orbitalVAO);
-    glGenBuffers(1, &orbitalVBO);
-    glBindVertexArray(orbitalVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, orbitalVBO);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
+    glGenBuffers(1, &orbitalPosVBO);
+    glGenBuffers(1, &orbitalColorVBO);
 
+    glBindVertexArray(orbitalVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, orbitalPosVBO);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glBindBuffer(GL_ARRAY_BUFFER, orbitalColorVBO);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
     while (!glfwWindowShouldClose(window))
     {
@@ -155,28 +143,33 @@ int main(void)
         processInput(window);
 
         if (orbitalNeedsUpdate) {
-            generateOrbital(n, l, m);
+            generateOrbital(n, l, m, s);
             orbitalNeedsUpdate = false;
         }
 
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        // UI Window
         ImGui::Begin("Controls");
         ImGui::Text("Quantum Numbers");
-        ImGui::Text("n = %d, l = %d, m = %d", n, l, m);
-        ImGui::Text("Use arrow keys to change state.");
-        ImGui::Text("Up/Down: n");
-        ImGui::Text("Left/Right: l");
-        ImGui::Text("'[' and ']': m");
+        if (ImGui::SliderInt("n", &n, 1, 4)) orbitalNeedsUpdate = true;
+        if (l >= n) l = n - 1;
+        if (ImGui::SliderInt("l", &l, 0, n > 0 ? n - 1 : 0)) orbitalNeedsUpdate = true;
+        if (m > l) m = l;
+        if (m < -l) m = -l;
+        if (ImGui::SliderInt("m", &m, -l, l)) orbitalNeedsUpdate = true;
+        ImGui::Separator();
+        ImGui::Text("Spin (s)");
+        if (ImGui::RadioButton("Up", &s, 1)) orbitalNeedsUpdate = true;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Down", &s, -1)) orbitalNeedsUpdate = true;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Both", &s, 0)) orbitalNeedsUpdate = true;
         ImGui::End();
-
 
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
@@ -184,15 +177,13 @@ int main(void)
         glm::mat4 view = camera.getViewMatrix();
         glm::mat4 model = glm::mat4(1.0f);
 
-        // Draw nucleus
         nucleusShader.bind();
         glUniformMatrix4fv(glGetUniformLocation(nucleusShader.id, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
         glUniformMatrix4fv(glGetUniformLocation(nucleusShader.id, "view"), 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(glGetUniformLocation(nucleusShader.id, "model"), 1, GL_FALSE, glm::value_ptr(model));
-        glBindVertexArray(VAO);
+        glBindVertexArray(nucleusVAO);
         glDrawElements(GL_TRIANGLES, (GLsizei)indices.size(), GL_UNSIGNED_INT, 0);
 
-        // Draw orbital
         lightingShader.bind();
         glUniformMatrix4fv(glGetUniformLocation(lightingShader.id, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
         glUniformMatrix4fv(glGetUniformLocation(lightingShader.id, "view"), 1, GL_FALSE, glm::value_ptr(view));
@@ -212,11 +203,12 @@ int main(void)
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
-    glDeleteBuffers(1, &EBO);
+    glDeleteVertexArrays(1, &nucleusVAO);
+    glDeleteBuffers(1, &nucleusVBO);
+    glDeleteBuffers(1, &nucleusEBO);
     glDeleteVertexArrays(1, &orbitalVAO);
-    glDeleteBuffers(1, &orbitalVBO);
+    glDeleteBuffers(1, &orbitalPosVBO);
+    glDeleteBuffers(1, &orbitalColorVBO);
 
     glfwTerminate();
     return 0;
@@ -226,7 +218,6 @@ void processInput(GLFWwindow *window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
-
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         camera.processKeyboard("FORWARD", deltaTime);
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -237,59 +228,8 @@ void processInput(GLFWwindow *window)
         camera.processKeyboard("RIGHT", deltaTime);
 }
 
-
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
-    if (action == GLFW_PRESS || action == GLFW_REPEAT) {
-        bool stateChanged = false;
-        if (key == GLFW_KEY_UP) {
-            n++;
-            if (n > 7) n = 7; // Cap n at a reasonable value
-            l = 0; m = 0;
-            stateChanged = true;
-        }
-        if (key == GLFW_KEY_DOWN) {
-            n--;
-            if (n < 1) n = 1;
-            l = 0; m = 0;
-            stateChanged = true;
-        }
-        if (key == GLFW_KEY_RIGHT) {
-            if (n > 1) {
-                l++;
-                if (l >= n) l = n - 1;
-                m = 0;
-                stateChanged = true;
-                printf("l changed to: %d\n", l);
-            }
-        }
-        if (key == GLFW_KEY_LEFT) {
-            if (n > 1) {
-                l--;
-                if (l < 0) l = 0;
-                m = 0;
-                stateChanged = true;
-                printf("l changed to: %d\n", l);
-            }
-        }
-        if (key == GLFW_KEY_RIGHT_BRACKET) {
-            m++;
-            if (m > l) m = l;
-            stateChanged = true;
-            printf("m changed to: %d\n", m);
-        }
-        if (key == GLFW_KEY_LEFT_BRACKET) {
-            m--;
-            if (m < -l) m = -l;
-            stateChanged = true;
-            printf("m changed to: %d\n", m);
-        }
-
-        if (stateChanged) {
-            orbitalNeedsUpdate = true;
-        }
-    }
-
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
@@ -302,13 +242,10 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
         lastY = (float)ypos;
         firstMouse = false;
     }
-
     float xoffset = (float)xpos - lastX;
     float yoffset = lastY - (float)ypos;
-
     lastX = (float)xpos;
     lastY = (float)ypos;
-
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
     {
         camera.processMouseMovement(xoffset, yoffset);
@@ -325,20 +262,17 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
     glViewport(0, 0, width, height);
 }
 
-void generateOrbital(int n, int l, int m) {
+void generateOrbital(int n, int l, int m, int s) {
     orbitalPoints.clear();
-    Hydrogen h(n, m, l, 0);
+    orbitalColors.clear();
+    Hydrogen h(n, m, l, s);
 
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(0.0, 1.0);
 
-    // Determine a suitable maximum radius for sampling
-    // This is a heuristic, might need adjustment
     double max_r = n * n * 2.5;
-
     double max_prob = 0.0;
-    // Pre-sample to find a rough maximum probability to normalize against
     for (int i = 0; i < 10000; ++i) {
         double r = dis(gen) * max_r;
         double theta = dis(gen) * 3.14159265;
@@ -349,6 +283,8 @@ void generateOrbital(int n, int l, int m) {
     }
     if (max_prob == 0.0) max_prob = 1.0;
 
+    glm::vec3 color_up(0.2f, 0.5f, 1.0f);
+    glm::vec3 color_down(1.0f, 0.3f, 0.2f);
 
     for (int i = 0; i < 50000; ++i) {
         double r = dis(gen) * max_r;
@@ -362,16 +298,25 @@ void generateOrbital(int n, int l, int m) {
             float y = (float)(r * sin(theta) * sin(phi));
             float z = (float)(r * cos(theta));
             orbitalPoints.push_back(glm::vec3(x, y, z));
+
+            if (s == 1) {
+                orbitalColors.push_back(color_up);
+            } else if (s == -1) {
+                orbitalColors.push_back(color_down);
+            } else { // s == 0 (Both)
+                orbitalColors.push_back((dis(gen) > 0.5) ? color_up : color_down);
+            }
         }
     }
 
     numOrbitalPoints = orbitalPoints.size();
 
     glBindVertexArray(orbitalVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, orbitalVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, orbitalPosVBO);
     glBufferData(GL_ARRAY_BUFFER, orbitalPoints.size() * sizeof(glm::vec3), orbitalPoints.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, orbitalColorVBO);
+    glBufferData(GL_ARRAY_BUFFER, orbitalColors.size() * sizeof(glm::vec3), orbitalColors.data(), GL_STATIC_DRAW);
 }
-
 
 void generateSphere(std::vector<float>& vertices, std::vector<unsigned int>& indices, float radius, int sectors, int stacks)
 {
